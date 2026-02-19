@@ -1,6 +1,6 @@
 from io import BytesIO
 from typing import List
-from fastapi import APIRouter, File, HTTPException, UploadFile, Query
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from document_converter.schema import BatchConversionJobResult, ConversationJobResult, ConversionResult
 from document_converter.service import DocumentConverterService, DoclingDocumentConversion
@@ -23,17 +23,21 @@ document_converter_service = DocumentConverterService(document_converter=convert
 )
 async def convert_single_document(
     document: UploadFile = File(...),
-    extract_tables_as_images: bool = False,
-    image_resolution_scale: int = Query(4, ge=1, le=4),
+    extract_tables_as_images: bool = Form(False),
+    image_resolution_scale: int = Form(4),
+    include_images: bool = Form(True),
 ):
     file_bytes = await document.read()
     if not is_file_format_supported(file_bytes, document.filename):
         raise HTTPException(status_code=400, detail=f"Unsupported file format: {document.filename}")
+    if not 1 <= image_resolution_scale <= 4:
+        raise HTTPException(status_code=400, detail="image_resolution_scale must be between 1 and 4")
 
     return document_converter_service.convert_document(
         (document.filename, BytesIO(file_bytes)),
         extract_tables=extract_tables_as_images,
         image_resolution_scale=image_resolution_scale,
+        include_images=include_images,
     )
 
 
@@ -45,8 +49,9 @@ async def convert_single_document(
 )
 async def convert_multiple_documents(
     documents: List[UploadFile] = File(...),
-    extract_tables_as_images: bool = False,
-    image_resolution_scale: int = Query(4, ge=1, le=4),
+    extract_tables_as_images: bool = Form(False),
+    image_resolution_scale: int = Form(4),
+    include_images: bool = Form(True),
 ):
     doc_streams = []
     for document in documents:
@@ -54,11 +59,14 @@ async def convert_multiple_documents(
         if not is_file_format_supported(file_bytes, document.filename):
             raise HTTPException(status_code=400, detail=f"Unsupported file format: {document.filename}")
         doc_streams.append((document.filename, BytesIO(file_bytes)))
+    if not 1 <= image_resolution_scale <= 4:
+        raise HTTPException(status_code=400, detail="image_resolution_scale must be between 1 and 4")
 
     return document_converter_service.convert_documents(
         doc_streams,
         extract_tables=extract_tables_as_images,
         image_resolution_scale=image_resolution_scale,
+        include_images=include_images,
     )
 
 
@@ -70,17 +78,21 @@ async def convert_multiple_documents(
 )
 async def create_single_document_conversion_job(
     document: UploadFile = File(...),
-    extract_tables_as_images: bool = False,
-    image_resolution_scale: int = Query(4, ge=1, le=4),
+    extract_tables_as_images: bool = Form(False),
+    image_resolution_scale: int = Form(4),
+    include_images: bool = Form(True),
 ):
     file_bytes = await document.read()
     if not is_file_format_supported(file_bytes, document.filename):
         raise HTTPException(status_code=400, detail=f"Unsupported file format: {document.filename}")
+    if not 1 <= image_resolution_scale <= 4:
+        raise HTTPException(status_code=400, detail="image_resolution_scale must be between 1 and 4")
 
     task = convert_document_task.delay(
         (document.filename, file_bytes),
         extract_tables=extract_tables_as_images,
         image_resolution_scale=image_resolution_scale,
+        include_images=include_images,
     )
 
     return ConversationJobResult(job_id=task.id, status="IN_PROGRESS")
@@ -104,8 +116,9 @@ async def get_conversion_job_status(job_id: str):
 )
 async def create_batch_conversion_job(
     documents: List[UploadFile] = File(...),
-    extract_tables_as_images: bool = False,
-    image_resolution_scale: int = Query(4, ge=1, le=4),
+    extract_tables_as_images: bool = Form(False),
+    image_resolution_scale: int = Form(4),
+    include_images: bool = Form(True),
 ):
     """Create a batch conversion job for multiple documents."""
     doc_data = []
@@ -114,11 +127,14 @@ async def create_batch_conversion_job(
         if not is_file_format_supported(file_bytes, document.filename):
             raise HTTPException(status_code=400, detail=f"Unsupported file format: {document.filename}")
         doc_data.append((document.filename, file_bytes))
+    if not 1 <= image_resolution_scale <= 4:
+        raise HTTPException(status_code=400, detail="image_resolution_scale must be between 1 and 4")
 
     task = convert_documents_task.delay(
         doc_data,
         extract_tables=extract_tables_as_images,
         image_resolution_scale=image_resolution_scale,
+        include_images=include_images,
     )
 
     return BatchConversionJobResult(job_id=task.id, status="IN_PROGRESS")

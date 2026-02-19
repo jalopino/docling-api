@@ -213,6 +213,7 @@ curl -X POST "http://localhost:8080/batch-conversion-jobs" \
 
 - `image_resolution_scale`: Control the resolution of extracted images (1-4)
 - `extract_tables_as_images`: Extract tables as images (true/false)
+- `include_images`: Include base64-encoded images in the response (true/false). Set to false to receive only markdown and skip image data for smaller responses.
 - `CPU_ONLY`: Build argument to switch between CPU/GPU modes
 
 ## Monitoring

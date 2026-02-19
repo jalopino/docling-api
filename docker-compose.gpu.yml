@@ -1,3 +1,6 @@
+# GPU compose: requires nvidia-container-toolkit on the host.
+# Install: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+# Then: sudo systemctl restart docker
 version: '3.8'
 
 services:
@@ -10,11 +13,18 @@ services:
     command: poetry run celery -A worker.celery_config worker --pool=solo -n worker_primary --loglevel=info
     volumes:
       - .:/app
+      - model_cache:/tmp
     environment:
       - REDIS_HOST=${REDIS_HOST}
       - ENV=production
       - NVIDIA_VISIBLE_DEVICES=all
-    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     depends_on:
       - redis
 
@@ -34,7 +44,14 @@ services:
       - "8081:8080"
     volumes:
       - .:/app
-    runtime: nvidia
+      - model_cache:/tmp
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     depends_on:
       - redis
       - celery_worker
@@ -57,12 +74,22 @@ services:
       - "5556:5555"
     volumes:
       - .:/app
+      - model_cache:/tmp
     environment:
       - REDIS_HOST=${REDIS_HOST}
       - ENV=production
       - NVIDIA_VISIBLE_DEVICES=all
-    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     depends_on:
       - app
       - redis
       - celery_worker
+
+volumes:
+  model_cache:

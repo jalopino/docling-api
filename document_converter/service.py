@@ -66,7 +66,7 @@ class DoclingDocumentConversion(DocumentConversionBase):
         return pipeline_options
 
     @staticmethod
-    def _process_document_images(conv_res) -> Tuple[str, List[ImageData]]:
+    def _process_document_images(conv_res, include_images: bool = True) -> Tuple[str, List[ImageData]]:
         images = []
         table_counter = 0
         picture_counter = 0
@@ -74,9 +74,6 @@ class DoclingDocumentConversion(DocumentConversionBase):
 
         for element, _level in conv_res.document.iterate_items():
             if isinstance(element, (TableItem, PictureItem)) and element.image:
-                img_buffer = BytesIO()
-                element.image.pil_image.save(img_buffer, format="PNG")
-
                 if isinstance(element, TableItem):
                     table_counter += 1
                     image_name = f"table-{table_counter}.png"
@@ -87,8 +84,11 @@ class DoclingDocumentConversion(DocumentConversionBase):
                     image_type = "picture"
                     content_md = content_md.replace("<!-- image -->", image_name, 1)
 
-                image_bytes = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
-                images.append(ImageData(type=image_type, filename=image_name, image=image_bytes))
+                if include_images:
+                    img_buffer = BytesIO()
+                    element.image.pil_image.save(img_buffer, format="PNG")
+                    image_bytes = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+                    images.append(ImageData(type=image_type, filename=image_name, image=image_bytes))
 
         return content_md, images
 
@@ -97,6 +97,7 @@ class DoclingDocumentConversion(DocumentConversionBase):
         document: Tuple[str, BytesIO],
         extract_tables: bool = False,
         image_resolution_scale: int = IMAGE_RESOLUTION_SCALE,
+        include_images: bool = True,
     ) -> ConversionResult:
         filename, file = document
         pipeline_options = self._update_pipeline_options(extract_tables, image_resolution_scale)
@@ -116,7 +117,7 @@ class DoclingDocumentConversion(DocumentConversionBase):
             logging.error(f"Failed to convert {filename}: {conv_res.errors[0].error_message}")
             return ConversionResult(filename=doc_filename, error=conv_res.errors[0].error_message)
 
-        content_md, images = self._process_document_images(conv_res)
+        content_md, images = self._process_document_images(conv_res, include_images=include_images)
         return ConversionResult(filename=doc_filename, markdown=content_md, images=images)
 
     def convert_batch(
@@ -124,6 +125,7 @@ class DoclingDocumentConversion(DocumentConversionBase):
         documents: List[Tuple[str, BytesIO]],
         extract_tables: bool = False,
         image_resolution_scale: int = IMAGE_RESOLUTION_SCALE,
+        include_images: bool = True,
     ) -> List[ConversionResult]:
         pipeline_options = self._update_pipeline_options(extract_tables, image_resolution_scale)
         doc_converter = DocumentConverter(
@@ -144,7 +146,7 @@ class DoclingDocumentConversion(DocumentConversionBase):
                 results.append(ConversionResult(filename=conv_res.input.name, error=conv_res.errors[0].error_message))
                 continue
 
-            content_md, images = self._process_document_images(conv_res)
+            content_md, images = self._process_document_images(conv_res, include_images=include_images)
             results.append(ConversionResult(filename=doc_filename, markdown=content_md, images=images))
 
         return results
