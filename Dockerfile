@@ -28,7 +28,7 @@ ENV HF_HOME=/tmp/ \
     TORCH_HOME=/tmp/ \
     OMP_NUM_THREADS=4
 
-RUN python -c 'from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline; artifacts_path = StandardPdfPipeline.download_models_hf(force=True);'
+# Docling 2.74+: models download on first conversion (no download_models_hf). Cache uses HF_HOME.
 
 # Pre-download EasyOCR models in compatible groups
 RUN python -c 'import easyocr; \
