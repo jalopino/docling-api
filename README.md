@@ -209,6 +209,25 @@ curl -X POST "http://localhost:8080/batch-conversion-jobs" \
   -F "documents=@/path/to/document2.pdf"
 ```
 
+## GPU setup (Ubuntu)
+
+To use the GPU compose on Ubuntu, install the NVIDIA Container Toolkit once on the host, then restart Docker. Copy and run:
+
+```bash
+# Add NVIDIA Container Toolkit repo (ARCH is set so $(ARCH) in the list becomes amd64/arm64 etc.)
+export ARCH=$(dpkg --print-architecture)
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sed "s#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g; s/\$(ARCH)/$ARCH/g" | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+# Install and configure
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+Then start the stack with `docker compose -f docker-compose.gpu.yml up --build`.
+
 ## Configuration Options
 
 - `image_resolution_scale`: Control the resolution of extracted images (1-4)

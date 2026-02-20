@@ -1,5 +1,7 @@
 import base64
+import gc
 import logging
+import sys
 from abc import ABC, abstractmethod
 from io import BytesIO
 from typing import List, Tuple
@@ -16,6 +18,17 @@ from document_converter.utils import handle_csv_file
 
 logging.basicConfig(level=logging.INFO)
 IMAGE_RESOLUTION_SCALE = 4
+
+
+def _release_conversion_memory() -> None:
+    """Release memory after a conversion to avoid growth across requests."""
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
 
 
 class DocumentConversionBase(ABC):
@@ -61,8 +74,12 @@ class DoclingDocumentConversion(DocumentConversionBase):
         pipeline_options = PdfPipelineOptions()
         pipeline_options.generate_page_images = False
         pipeline_options.generate_picture_images = True
-        pipeline_options.ocr_options = EasyOcrOptions(lang=["fr", "de", "es", "en", "it", "pt"])
-
+        pipeline_options.do_ocr = True
+        # Force full-page OCR so scanned pages and image regions yield text, not just picture-N.png placeholders
+        pipeline_options.ocr_options = EasyOcrOptions(
+            lang=["fr", "de", "es", "en", "it", "pt"],
+            force_full_page_ocr=True,
+        )
         return pipeline_options
 
     @staticmethod
@@ -110,14 +127,23 @@ class DoclingDocumentConversion(DocumentConversionBase):
             if error:
                 return ConversionResult(filename=filename, error=error)
 
-        conv_res = doc_converter.convert(DocumentStream(name=filename, stream=file), raises_on_error=False)
+        file.seek(0)
+        conv_res = doc_converter.convert(
+            DocumentStream(name=filename, stream=file),
+            raises_on_error=False,
+            max_num_pages=sys.maxsize,
+        )
         doc_filename = conv_res.input.file.stem
 
         if conv_res.errors:
             logging.error(f"Failed to convert {filename}: {conv_res.errors[0].error_message}")
+            _release_conversion_memory()
             return ConversionResult(filename=doc_filename, error=conv_res.errors[0].error_message)
 
         content_md, images = self._process_document_images(conv_res, include_images=include_images)
+        del conv_res
+        del doc_converter
+        _release_conversion_memory()
         return ConversionResult(filename=doc_filename, markdown=content_md, images=images)
 
     def convert_batch(
@@ -132,9 +158,12 @@ class DoclingDocumentConversion(DocumentConversionBase):
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
         )
 
+        for filename, file in documents:
+            file.seek(0)
         conv_results = doc_converter.convert_all(
             [DocumentStream(name=filename, stream=file) for filename, file in documents],
             raises_on_error=False,
+            max_num_pages=sys.maxsize,
         )
 
         results = []
@@ -144,11 +173,17 @@ class DoclingDocumentConversion(DocumentConversionBase):
             if conv_res.errors:
                 logging.error(f"Failed to convert {conv_res.input.name}: {conv_res.errors[0].error_message}")
                 results.append(ConversionResult(filename=conv_res.input.name, error=conv_res.errors[0].error_message))
+                del conv_res
                 continue
 
             content_md, images = self._process_document_images(conv_res, include_images=include_images)
             results.append(ConversionResult(filename=doc_filename, markdown=content_md, images=images))
+            del conv_res
+            _release_conversion_memory()
 
+        del doc_converter
+        del conv_results
+        _release_conversion_memory()
         return results
 
 
