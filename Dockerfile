@@ -28,12 +28,7 @@ ENV HF_HOME=/tmp/ \
     TORCH_HOME=/tmp/ \
     OMP_NUM_THREADS=4
 
-# Docling 2.74+: models download on first conversion (no download_models_hf). Cache uses HF_HOME.
-
-# Pre-download EasyOCR models (use gpu=False at build time: no GPU in build env)
-RUN python -c 'import easyocr; \
-    reader = easyocr.Reader(["fr", "de", "es", "en", "it", "pt"], gpu=False); \
-    print("EasyOCR models downloaded successfully")'
+# Granite Docling VLM: model downloads on first conversion (Hugging Face). Cache uses HF_HOME.
 
 COPY . .
 
