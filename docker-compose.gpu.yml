@@ -12,7 +12,6 @@ services:
     image: converter-gpu-image
     command: poetry run celery -A worker.celery_config worker --pool=solo -n worker_primary --loglevel=info
     volumes:
-      - .:/app
       - model_cache:/tmp
     environment:
       - REDIS_HOST=${REDIS_HOST}
@@ -43,7 +42,6 @@ services:
     ports:
       - "8081:8080"
     volumes:
-      - .:/app
       - model_cache:/tmp
     deploy:
       resources:
@@ -73,7 +71,6 @@ services:
     ports:
       - "5556:5555"
     volumes:
-      - .:/app
       - model_cache:/tmp
     environment:
       - REDIS_HOST=${REDIS_HOST}
