@@ -54,37 +54,11 @@ class DoclingDocumentConversion(DocumentConversionBase):
 
     @staticmethod
     def _document_to_markdown(conv_res) -> str:
-        """Export document to text-only markdown with page breaks. No images."""
-        # Per-page export for explicit page breaks. DoclingDocument has pages: dict[int, PageItem]
-        # and num_pages(); backend may leave pages empty.
-        page_numbers = None
-        pages = getattr(conv_res.document, "pages", None)
-        if pages and len(pages) >= 1:
-            page_numbers = sorted(pages.keys())
-        else:
-            num_pages_fn = getattr(conv_res.document, "num_pages", None)
-            if callable(num_pages_fn):
-                try:
-                    n = num_pages_fn()
-                    if isinstance(n, int) and n >= 1:
-                        page_numbers = list(range(1, n + 1))
-                except Exception:
-                    pass
-
-        if page_numbers:
-            page_mds = []
-            for p in page_numbers:
-                page_md = conv_res.document.export_to_markdown(
-                    image_mode=ImageRefMode.PLACEHOLDER, page_no=p
-                )
-                page_mds.append(page_md or "")
-            content_md = "\n\n==== PAGE BREAK ====\n\n".join(page_mds)
-        else:
-            content_md = conv_res.document.export_to_markdown(
-                image_mode=ImageRefMode.PLACEHOLDER,
-                page_break_placeholder="\n\n==== PAGE BREAK ====\n\n",
-            )
-        # Remove image placeholders so output is text-only markdown
+        """Export document to text-only markdown with page breaks between pages."""
+        content_md = conv_res.document.export_to_markdown(
+            image_mode=ImageRefMode.PLACEHOLDER,
+            page_break_placeholder="\n\n==== PAGE BREAK ====\n\n",
+        )
         content_md = content_md.replace("<!-- image -->", "")
         return content_md
 
