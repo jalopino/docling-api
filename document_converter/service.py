@@ -54,7 +54,7 @@ class DoclingDocumentConversion(DocumentConversionBase):
         # Or customize with your own pipeline options
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = True
-        pipeline_options.ocr_options = RapidOcrOptions()  # Use RapidOcrOptions instead of EasyOCR (note : you need to install the OCR package)
+        pipeline_options.ocr_options = EasyOcrOptions(lang=["en"], force_full_page_ocr=True)
         pipeline_options.generate_page_images = True
 
         converter = DoclingDocumentConversion(pipeline_options=pipeline_options)
