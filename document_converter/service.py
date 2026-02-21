@@ -87,17 +87,22 @@ class DoclingDocumentConversion(DocumentConversionBase):
         images = []
         table_counter = 0
         picture_counter = 0
-        page_count = getattr(conv_res.document, "page_count", None)
-        if page_count is not None and page_count >= 1:
+        # DoclingDocument has pages: dict[int, PageItem]; no page_count attribute
+        pages = getattr(conv_res.document, "pages", None)
+        if pages and len(pages) >= 1:
+            page_numbers = sorted(pages.keys())
             page_mds = []
-            for p in range(1, page_count + 1):
+            for p in page_numbers:
                 page_md = conv_res.document.export_to_markdown(
                     image_mode=ImageRefMode.PLACEHOLDER, page_no=p
                 )
                 page_mds.append(page_md or "")
             content_md = "\n\n==== PAGE BREAK ====\n\n".join(page_mds)
         else:
-            content_md = conv_res.document.export_to_markdown(image_mode=ImageRefMode.PLACEHOLDER)
+            content_md = conv_res.document.export_to_markdown(
+                image_mode=ImageRefMode.PLACEHOLDER,
+                page_break_placeholder="\n\n==== PAGE BREAK ====\n\n",
+            )
 
         for element, _level in conv_res.document.iterate_items():
             if isinstance(element, (TableItem, PictureItem)) and element.image:
