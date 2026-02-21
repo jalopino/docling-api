@@ -25,14 +25,11 @@ async def convert_single_document(
     document: UploadFile = File(...),
     extract_tables_as_images: Optional[bool] = Form(None),
     image_resolution_scale: Optional[int] = Form(None),
-    include_images: Optional[bool] = Form(None),
     extract_tables_as_images_q: Optional[bool] = Query(None, alias="extract_tables_as_images"),
     image_resolution_scale_q: Optional[int] = Query(None, ge=1, le=4, alias="image_resolution_scale"),
-    include_images_q: Optional[bool] = Query(None, alias="include_images"),
 ):
     extract_tables = extract_tables_as_images if extract_tables_as_images is not None else (extract_tables_as_images_q if extract_tables_as_images_q is not None else False)
     scale = image_resolution_scale if image_resolution_scale is not None else (image_resolution_scale_q if image_resolution_scale_q is not None else 4)
-    include_imgs = include_images if include_images is not None else (include_images_q if include_images_q is not None else True)
     file_bytes = await document.read()
     if not is_file_format_supported(file_bytes, document.filename):
         raise HTTPException(status_code=400, detail=f"Unsupported file format: {document.filename}")
@@ -43,7 +40,6 @@ async def convert_single_document(
         (document.filename, BytesIO(file_bytes)),
         extract_tables=extract_tables,
         image_resolution_scale=scale,
-        include_images=include_imgs,
     )
 
 
@@ -57,14 +53,11 @@ async def convert_multiple_documents(
     documents: List[UploadFile] = File(...),
     extract_tables_as_images: Optional[bool] = Form(None),
     image_resolution_scale: Optional[int] = Form(None),
-    include_images: Optional[bool] = Form(None),
     extract_tables_as_images_q: Optional[bool] = Query(None, alias="extract_tables_as_images"),
     image_resolution_scale_q: Optional[int] = Query(None, ge=1, le=4, alias="image_resolution_scale"),
-    include_images_q: Optional[bool] = Query(None, alias="include_images"),
 ):
     extract_tables = extract_tables_as_images if extract_tables_as_images is not None else (extract_tables_as_images_q if extract_tables_as_images_q is not None else False)
     scale = image_resolution_scale if image_resolution_scale is not None else (image_resolution_scale_q if image_resolution_scale_q is not None else 4)
-    include_imgs = include_images if include_images is not None else (include_images_q if include_images_q is not None else True)
     doc_streams = []
     for document in documents:
         file_bytes = await document.read()
@@ -78,7 +71,6 @@ async def convert_multiple_documents(
         doc_streams,
         extract_tables=extract_tables,
         image_resolution_scale=scale,
-        include_images=include_imgs,
     )
 
 
@@ -92,14 +84,11 @@ async def create_single_document_conversion_job(
     document: UploadFile = File(...),
     extract_tables_as_images: Optional[bool] = Form(None),
     image_resolution_scale: Optional[int] = Form(None),
-    include_images: Optional[bool] = Form(None),
     extract_tables_as_images_q: Optional[bool] = Query(None, alias="extract_tables_as_images"),
     image_resolution_scale_q: Optional[int] = Query(None, ge=1, le=4, alias="image_resolution_scale"),
-    include_images_q: Optional[bool] = Query(None, alias="include_images"),
 ):
     extract_tables = extract_tables_as_images if extract_tables_as_images is not None else (extract_tables_as_images_q if extract_tables_as_images_q is not None else False)
     scale = image_resolution_scale if image_resolution_scale is not None else (image_resolution_scale_q if image_resolution_scale_q is not None else 4)
-    include_imgs = include_images if include_images is not None else (include_images_q if include_images_q is not None else True)
     file_bytes = await document.read()
     if not is_file_format_supported(file_bytes, document.filename):
         raise HTTPException(status_code=400, detail=f"Unsupported file format: {document.filename}")
@@ -110,7 +99,6 @@ async def create_single_document_conversion_job(
         (document.filename, file_bytes),
         extract_tables=extract_tables,
         image_resolution_scale=scale,
-        include_images=include_imgs,
     )
 
     return ConversationJobResult(job_id=task.id, status="IN_PROGRESS")
@@ -136,15 +124,12 @@ async def create_batch_conversion_job(
     documents: List[UploadFile] = File(...),
     extract_tables_as_images: Optional[bool] = Form(None),
     image_resolution_scale: Optional[int] = Form(None),
-    include_images: Optional[bool] = Form(None),
     extract_tables_as_images_q: Optional[bool] = Query(None, alias="extract_tables_as_images"),
     image_resolution_scale_q: Optional[int] = Query(None, ge=1, le=4, alias="image_resolution_scale"),
-    include_images_q: Optional[bool] = Query(None, alias="include_images"),
 ):
     """Create a batch conversion job for multiple documents."""
     extract_tables = extract_tables_as_images if extract_tables_as_images is not None else (extract_tables_as_images_q if extract_tables_as_images_q is not None else False)
     scale = image_resolution_scale if image_resolution_scale is not None else (image_resolution_scale_q if image_resolution_scale_q is not None else 4)
-    include_imgs = include_images if include_images is not None else (include_images_q if include_images_q is not None else True)
     doc_data = []
     for document in documents:
         file_bytes = await document.read()
@@ -158,7 +143,6 @@ async def create_batch_conversion_job(
         doc_data,
         extract_tables=extract_tables,
         image_resolution_scale=scale,
-        include_images=include_imgs,
     )
 
     return BatchConversionJobResult(job_id=task.id, status="IN_PROGRESS")

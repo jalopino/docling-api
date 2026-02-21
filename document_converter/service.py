@@ -1,4 +1,3 @@
-import base64
 import gc
 import logging
 import sys
@@ -10,10 +9,10 @@ from celery.result import AsyncResult
 from docling.datamodel.base_models import InputFormat, DocumentStream
 from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions
 from docling.document_converter import PdfFormatOption, DocumentConverter
-from docling_core.types.doc import ImageRefMode, TableItem, PictureItem
+from docling_core.types.doc import ImageRefMode
 from fastapi import HTTPException
 
-from document_converter.schema import BatchConversionJobResult, ConversationJobResult, ConversionResult, ImageData
+from document_converter.schema import BatchConversionJobResult, ConversationJobResult, ConversionResult
 from document_converter.utils import handle_csv_file
 
 logging.basicConfig(level=logging.INFO)
@@ -74,23 +73,35 @@ class DoclingDocumentConversion(DocumentConversionBase):
         pipeline_options = PdfPipelineOptions()
         pipeline_options.generate_page_images = False
         pipeline_options.generate_picture_images = True
+        # Use OCR (EasyOCR) for PDFs: native text when present; OCR only for embedded images/figures.
+        # force_full_page_ocr=False is faster; use True only for scanned PDFs with no text layer.
         pipeline_options.do_ocr = True
-        # Force full-page OCR so scanned pages and image regions yield text, not just picture-N.png placeholders
         pipeline_options.ocr_options = EasyOcrOptions(
             lang=["fr", "de", "es", "en", "it", "pt"],
-            force_full_page_ocr=True,
+            force_full_page_ocr=False,
         )
         return pipeline_options
 
     @staticmethod
-    def _process_document_images(conv_res, include_images: bool = True) -> Tuple[str, List[ImageData]]:
-        images = []
-        table_counter = 0
-        picture_counter = 0
-        # DoclingDocument has pages: dict[int, PageItem]; no page_count attribute
+    def _document_to_markdown(conv_res) -> str:
+        """Export document to text-only markdown with page breaks. No images."""
+        # Per-page export for explicit page breaks. DoclingDocument has pages: dict[int, PageItem]
+        # and num_pages(); backend may leave pages empty.
+        page_numbers = None
         pages = getattr(conv_res.document, "pages", None)
         if pages and len(pages) >= 1:
             page_numbers = sorted(pages.keys())
+        else:
+            num_pages_fn = getattr(conv_res.document, "num_pages", None)
+            if callable(num_pages_fn):
+                try:
+                    n = num_pages_fn()
+                    if isinstance(n, int) and n >= 1:
+                        page_numbers = list(range(1, n + 1))
+                except Exception:
+                    pass
+
+        if page_numbers:
             page_mds = []
             for p in page_numbers:
                 page_md = conv_res.document.export_to_markdown(
@@ -103,33 +114,15 @@ class DoclingDocumentConversion(DocumentConversionBase):
                 image_mode=ImageRefMode.PLACEHOLDER,
                 page_break_placeholder="\n\n==== PAGE BREAK ====\n\n",
             )
-
-        for element, _level in conv_res.document.iterate_items():
-            if isinstance(element, (TableItem, PictureItem)) and element.image:
-                if isinstance(element, TableItem):
-                    table_counter += 1
-                    image_name = f"table-{table_counter}.png"
-                    image_type = "table"
-                else:
-                    picture_counter += 1
-                    image_name = f"picture-{picture_counter}.png"
-                    image_type = "picture"
-                    content_md = content_md.replace("<!-- image -->", image_name, 1)
-
-                if include_images:
-                    img_buffer = BytesIO()
-                    element.image.pil_image.save(img_buffer, format="PNG")
-                    image_bytes = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
-                    images.append(ImageData(type=image_type, filename=image_name, image=image_bytes))
-
-        return content_md, images
+        # Remove image placeholders so output is text-only markdown
+        content_md = content_md.replace("<!-- image -->", "")
+        return content_md
 
     def convert(
         self,
         document: Tuple[str, BytesIO],
         extract_tables: bool = False,
         image_resolution_scale: int = IMAGE_RESOLUTION_SCALE,
-        include_images: bool = True,
     ) -> ConversionResult:
         filename, file = document
         pipeline_options = self._update_pipeline_options(extract_tables, image_resolution_scale)
@@ -155,18 +148,17 @@ class DoclingDocumentConversion(DocumentConversionBase):
             _release_conversion_memory()
             return ConversionResult(filename=doc_filename, error=conv_res.errors[0].error_message)
 
-        content_md, images = self._process_document_images(conv_res, include_images=include_images)
+        content_md = self._document_to_markdown(conv_res)
         del conv_res
         del doc_converter
         _release_conversion_memory()
-        return ConversionResult(filename=doc_filename, markdown=content_md, images=images)
+        return ConversionResult(filename=doc_filename, markdown=content_md, images=[])
 
     def convert_batch(
         self,
         documents: List[Tuple[str, BytesIO]],
         extract_tables: bool = False,
         image_resolution_scale: int = IMAGE_RESOLUTION_SCALE,
-        include_images: bool = True,
     ) -> List[ConversionResult]:
         pipeline_options = self._update_pipeline_options(extract_tables, image_resolution_scale)
         doc_converter = DocumentConverter(
@@ -191,8 +183,8 @@ class DoclingDocumentConversion(DocumentConversionBase):
                 del conv_res
                 continue
 
-            content_md, images = self._process_document_images(conv_res, include_images=include_images)
-            results.append(ConversionResult(filename=doc_filename, markdown=content_md, images=images))
+            content_md = self._document_to_markdown(conv_res)
+            results.append(ConversionResult(filename=doc_filename, markdown=content_md, images=[]))
             del conv_res
             _release_conversion_memory()
 
