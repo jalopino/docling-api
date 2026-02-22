@@ -7,9 +7,8 @@ from typing import List, Tuple
 
 from celery.result import AsyncResult
 from docling.datamodel.base_models import InputFormat, DocumentStream
-from docling.datamodel.pipeline_options import VlmConvertOptions, VlmPipelineOptions
+from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions
 from docling.document_converter import PdfFormatOption, DocumentConverter
-from docling.pipeline.vlm_pipeline import VlmPipeline
 from docling_core.types.doc import ImageRefMode
 from fastapi import HTTPException
 
@@ -18,9 +17,6 @@ from document_converter.utils import handle_csv_file
 
 logging.basicConfig(level=logging.INFO)
 IMAGE_RESOLUTION_SCALE = 4
-
-# Granite Docling VLM pipeline (replaces EasyOCR): single vision-language model for document understanding.
-_VLM_OPTIONS = VlmPipelineOptions(vlm_options=VlmConvertOptions.from_preset("granite_docling"))
 
 
 def _release_conversion_memory() -> None:
@@ -45,20 +41,80 @@ class DocumentConversionBase(ABC):
 
 
 class DoclingDocumentConversion(DocumentConversionBase):
-    """Document conversion using Docling with Granite Docling VLM pipeline.
+    """Document conversion implementation using Docling.
 
-    Uses the vision-language model (Granite Docling) for end-to-end document understanding;
-    no separate OCR pipeline. extract_tables and image_resolution_scale are kept for API
-    compatibility but are not used by the VLM pipeline.
+    You can initialize with default pipeline options or provide your own:
+
+    Example:
+        ```python
+        # Using default options
+        converter = DoclingDocumentConversion()
+
+        # Or customize with your own pipeline options
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_ocr = True
+        pipeline_options.ocr_options = EasyOcrOptions(lang=["en"], force_full_page_ocr=True)
+        pipeline_options.generate_page_images = True
+
+        converter = DoclingDocumentConversion(pipeline_options=pipeline_options)
+        ```
     """
+
+    def __init__(self, pipeline_options: PdfPipelineOptions = None):
+        self.pipeline_options = pipeline_options if pipeline_options else self._setup_default_pipeline_options()
+
+    def _update_pipeline_options(self, extract_tables: bool, image_resolution_scale: int) -> PdfPipelineOptions:
+        self.pipeline_options.images_scale = image_resolution_scale
+        self.pipeline_options.generate_table_images = extract_tables
+        return self.pipeline_options
+
+    @staticmethod
+    def _setup_default_pipeline_options() -> PdfPipelineOptions:
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.generate_page_images = False
+        pipeline_options.generate_picture_images = True
+        # Use OCR (EasyOCR) for PDFs: native text when present; OCR only for embedded images/figures.
+        # force_full_page_ocr=False is faster; use True only for scanned PDFs with no text layer.
+        pipeline_options.do_ocr = True
+        pipeline_options.ocr_options = EasyOcrOptions(
+            lang=["fr", "de", "es", "en", "it", "pt"],
+            force_full_page_ocr=False,
+        )
+        return pipeline_options
 
     @staticmethod
     def _document_to_markdown(conv_res) -> str:
-        """Export document to text-only markdown with page breaks between pages."""
-        content_md = conv_res.document.export_to_markdown(
-            image_mode=ImageRefMode.PLACEHOLDER,
-            page_break_placeholder="\n\n==== PAGE BREAK ====\n\n",
-        )
+        """Export document to text-only markdown with page breaks. No images."""
+        # Per-page export for explicit page breaks. DoclingDocument has pages: dict[int, PageItem]
+        # and num_pages(); backend may leave pages empty.
+        page_numbers = None
+        pages = getattr(conv_res.document, "pages", None)
+        if pages and len(pages) >= 1:
+            page_numbers = sorted(pages.keys())
+        else:
+            num_pages_fn = getattr(conv_res.document, "num_pages", None)
+            if callable(num_pages_fn):
+                try:
+                    n = num_pages_fn()
+                    if isinstance(n, int) and n >= 1:
+                        page_numbers = list(range(1, n + 1))
+                except Exception:
+                    pass
+
+        if page_numbers:
+            page_mds = []
+            for p in page_numbers:
+                page_md = conv_res.document.export_to_markdown(
+                    image_mode=ImageRefMode.PLACEHOLDER, page_no=p
+                )
+                page_mds.append(page_md or "")
+            content_md = "\n\n==== PAGE BREAK ====\n\n".join(page_mds)
+        else:
+            content_md = conv_res.document.export_to_markdown(
+                image_mode=ImageRefMode.PLACEHOLDER,
+                page_break_placeholder="\n\n==== PAGE BREAK ====\n\n",
+            )
+        # Remove image placeholders so output is text-only markdown
         content_md = content_md.replace("<!-- image -->", "")
         return content_md
 
@@ -69,13 +125,9 @@ class DoclingDocumentConversion(DocumentConversionBase):
         image_resolution_scale: int = IMAGE_RESOLUTION_SCALE,
     ) -> ConversionResult:
         filename, file = document
+        pipeline_options = self._update_pipeline_options(extract_tables, image_resolution_scale)
         doc_converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(
-                    pipeline_cls=VlmPipeline,
-                    pipeline_options=_VLM_OPTIONS,
-                )
-            }
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
         )
 
         if filename.lower().endswith('.csv'):
@@ -108,13 +160,9 @@ class DoclingDocumentConversion(DocumentConversionBase):
         extract_tables: bool = False,
         image_resolution_scale: int = IMAGE_RESOLUTION_SCALE,
     ) -> List[ConversionResult]:
+        pipeline_options = self._update_pipeline_options(extract_tables, image_resolution_scale)
         doc_converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(
-                    pipeline_cls=VlmPipeline,
-                    pipeline_options=_VLM_OPTIONS,
-                )
-            }
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
         )
 
         for filename, file in documents:
