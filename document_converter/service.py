@@ -73,12 +73,10 @@ class DoclingDocumentConversion(DocumentConversionBase):
         pipeline_options = PdfPipelineOptions()
         pipeline_options.generate_page_images = False
         pipeline_options.generate_picture_images = True
-        # Use OCR (EasyOCR) for PDFs: native text when present; OCR only for embedded images/figures.
-        # force_full_page_ocr=False is faster; use True only for scanned PDFs with no text layer.
         pipeline_options.do_ocr = True
         pipeline_options.ocr_options = EasyOcrOptions(
             lang=["fr", "de", "es", "en", "it", "pt"],
-            force_full_page_ocr=False,
+            force_full_page_ocr=True,
         )
         return pipeline_options
 
